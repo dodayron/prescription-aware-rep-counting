@@ -105,3 +105,20 @@ Exploratory by pathology (small groups, descriptive only):
 | Back pain | 7 | 40 | 35 | 88% [64, 100] | 29% | 14% |
 | Healthy non-expert | 26 | 82 | 82 | 100% | 4% | 0% |
 | Healthy expert | 16 | 57 | 55 | 96% | 12% | 0% |
+
+## Pose-error stress test (12 Nov; `stress_test.py`, `out/stress_*`) — SIMULATION
+
+KIMORE side-view knee angles passed through the BlazePose-lite error model measured on REHAB24-6 (profile):
+`true = 1.162·bp − 36.9`, AR(1) residual noise SD 3.7° with lag-1 autocorrelation 0.98; 20 noise seeds.
+
+| Cohort | Fixed 160/90 logs zero | Calibrated logs zero | Fixed reps | Calibrated attempts | Fidelity, band on raw angle | Fidelity, after linear correction |
+|---|---|---|---|---|---|---|
+| Patients (31) | 75% (clean: 58%) | 1.6% (clean: 0%) | 21 (35) | 108 (112) | 63% | 80% (clean: 78%) |
+| Healthy (42) | 54% (clean: 7%) | 0% | 50 (123) | 139 (139) | 95% | 98% (clean: 99%) |
+
+- Calibrated counting is essentially unaffected by the pose error (it is scale-free); fixed thresholds get much
+  worse, for healthy users too, because BlazePose compresses depth (its 90° is a true ~68°). This matches the real
+  REHAB24-6 result (fixed recall 54% in healthy adults).
+- The band/fidelity check needs the angle correction: without it fidelity is under-reported (63% vs 80% in patients).
+- This is a simulation layered on a simulated side view: it models systematic compression and correlated noise,
+  not detection failures, occlusion or patient-specific pose errors.

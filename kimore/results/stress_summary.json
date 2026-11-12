@@ -1,0 +1,50 @@
+{
+ "model": {
+  "slope": 1.1623116318480213,
+  "intercept": -36.855242573195795,
+  "sd": 3.7272713319204227,
+  "rho": 0.9760428165146215
+ },
+ "summary": [
+  {
+   "n": 42.0,
+   "fixed_zero": 0.5380952380952382,
+   "calib_zero": 0.0,
+   "calib_fail": 0.0,
+   "fixed_reps": 50.05,
+   "attempts": 138.55,
+   "met_uncorrected": 131.6,
+   "met_corrected": 135.95,
+   "fidelity_uncorrected": 0.9498200059178089,
+   "fidelity_corrected": 0.9812678883486786,
+   "cohort": "healthy",
+   "seeds": 20,
+   "fixed_zero_sd": 0.03736774027004264,
+   "calib_zero_sd": 0.0,
+   "fidelity_uncorrected_sd": 0.009887866345021023,
+   "fidelity_corrected_sd": 0.00782786833479663,
+   "attempts_sd": 1.1459310165698642,
+   "fixed_reps_sd": 2.3050288273114594
+  },
+  {
+   "n": 31.0,
+   "fixed_zero": 0.7451612903225807,
+   "calib_zero": 0.016129032258064512,
+   "calib_fail": 0.0,
+   "fixed_reps": 20.55,
+   "attempts": 108.05,
+   "met_uncorrected": 68.2,
+   "met_corrected": 86.0,
+   "fidelity_uncorrected": 0.6306434248177171,
+   "fidelity_corrected": 0.7958741276038789,
+   "cohort": "patient",
+   "seeds": 20,
+   "fixed_zero_sd": 0.020668492758618935,
+   "calib_zero_sd": 0.019579902537641417,
+   "fidelity_uncorrected_sd": 0.030283015117625715,
+   "fidelity_corrected_sd": 0.027358300490195935,
+   "attempts_sd": 3.8178941564000546,
+   "fixed_reps_sd": 1.3562719801759993
+  }
+ ]
+}

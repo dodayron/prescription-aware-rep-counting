@@ -19,11 +19,13 @@ was run on the device except the frame-rate figures quoted from the thesis; `pi_
 | Does a fixed (160°/90°) counter misreport patients? | KIMORE, 31 patients, simulated side view | Logged zero reps for 58% [42, 74] of patients; those 18 made 50 attempts, 28 at prescribed depth |
 | Adherence vs fidelity | KIMORE | Patients: fixed counter 35 reps; calibrated counter 112 attempts, 87 at prescription (fidelity 78% [64, 89]); healthy 99% |
 | Does fidelity track clinician scores? | KIMORE, n = 73 | Spearman ρ = 0.44 [0.19, 0.62] |
+| Second cohort, second exercise | IntelliRehabDS, 14 patients, lateral raise, frontal view | Fixed rule registered 77% [55, 98] of patient reps that annotators judged correct; calibrated 98% [95, 100] |
+| Does the patient result survive pose error? (simulation) | KIMORE + BlazePose error model | Fixed logs zero for 75% of patients; calibrated 1.6%; fidelity 80% after angle correction |
 | Counting accuracy vs annotated reps | REHAB24-6, profile view, lite model | Recall 54% (fixed) → 97% [93, 100] (calibrated), no false positives |
 | Knee-angle accuracy vs motion capture | REHAB24-6, profile view, lite model | RMSE 15.8° raw → 4.5° [4.2, 4.9] with a linear correction learned on other participants |
 
 Intervals are subject-level bootstrap 95% CIs (2,000 resamples). Full tables, sensitivity analyses and limitations:
-[`kimore/RESULTS.md`](kimore/RESULTS.md) and [`rehab24/RESULTS.md`](rehab24/RESULTS.md).
+[`kimore/RESULTS.md`](kimore/RESULTS.md), [`rehab24/RESULTS.md`](rehab24/RESULTS.md) and [`irds/RESULTS.md`](irds/RESULTS.md).
 
 ## Layout
 
@@ -33,6 +35,7 @@ kimore/            KIMORE (clinical transfer): rep rule, calibration, fidelity
   kimore_io.py       Kinect v2 skeleton loading, side/front projection, knee angle
   calib_eval.py      fixed vs prescription vs auto-calibrated thresholds, bootstrap CIs
   fidelity_eval.py   per-repetition attempts vs attempts at prescribed depth
+  stress_test.py     reruns the analysis with BlazePose-like angle error injected (simulation)
   results/           aggregate outputs only (see Data below)
   RESULTS.md
 rehab24/           REHAB24-6 (measurement accuracy): BlazePose vs motion capture and annotated reps
@@ -41,6 +44,8 @@ rehab24/           REHAB24-6 (measurement accuracy): BlazePose vs motion capture
   offset_test.py           angle-correction methods (constant / linear, LOSO / per-user)
   results/                 lite_* (model_complexity=0, as deployed) and full_* (model_complexity=1)
   RESULTS.md
+irds/              IntelliRehabDS (second patient cohort): arm curl and lateral raise rules vs annotator labels
+  irds_eval.py, results/, RESULTS.md
 pi_benchmark/      replay the REHAB24-6 videos on the Pi 5 (no camera, no person): fps, RAM, reproduction
 device_patch/      auto-calibration, prescription band and per-frame logging for CV-Fitness-Tracker-Upgrade
 figures/           figure scripts and outputs (v2 = current abstract figure)
@@ -62,6 +67,9 @@ python rehab24/run_blazepose_rehab.py <rehab root>/videos/Ex6 <bp_out> --complex
 python rehab24/analyze_rehab.py <rehab root> <bp_out> rehab24/results/lite --suffix _c0
 python rehab24/offset_test.py   <rehab root> rehab24/results/lite
 
+# IntelliRehabDS (needs SkeletonData.zip from Zenodo)
+python irds/irds_eval.py <SkeletonData>/RawData irds/results/irds
+
 # Figures (read the aggregate results in this repo)
 python figures/make_figure_v2.py
 ```
@@ -76,6 +84,8 @@ Both analyses were re-run from this repository's copy and reproduce the committe
 - **REHAB24-6** (Černek, Sedmidubský & Budíková, Zenodo [13305826](https://zenodo.org/records/13305826)) is
   CC BY-NC 4.0. The derived per-frame and per-repetition tables in `rehab24/results/` are shared under the same
   licence with attribution. Raw videos and motion capture are not included; download them from Zenodo.
+- **IntelliRehabDS** (Miron et al., *Data* 2021; Zenodo [4610859](https://zenodo.org/records/4610859)) is CC BY 4.0.
+  `irds/results/irds_per_rep.csv` is derived from it (one row per repetition file).
 - Code: see `LICENSE` (to be chosen before the repository is made public).
 
 ## Citation

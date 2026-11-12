@@ -1,0 +1,378 @@
+[
+ {
+  "kind": "curl",
+  "view": "2d",
+  "cohort": "patient",
+  "subjects": 14,
+  "reps": 226,
+  "labelled_correct": 0.6106194690265486,
+  "test_reps": 172,
+  "test_correct_reps": 102,
+  "usable": 0.9365655201913469,
+  "fixed": 0.872093023255814,
+  "fixed_ci": [
+   0.7740062550443906,
+   0.9720757079560778
+  ],
+  "fixed_on_correct": 1.0,
+  "fixed_on_correct_ci": [
+   1.0,
+   1.0
+  ],
+  "fixed_angle_only": 0.872093023255814,
+  "fixed_angle_only_ci": [
+   0.7732543155118677,
+   0.9712281603288797
+  ],
+  "fixed_angle_only_on_correct": 1.0,
+  "fixed_angle_only_on_correct_ci": [
+   1.0,
+   1.0
+  ],
+  "calib": 0.9186046511627907,
+  "calib_ci": [
+   0.8248645246629117,
+   1.0
+  ],
+  "calib_on_correct": 1.0,
+  "calib_on_correct_ci": [
+   1.0,
+   1.0
+  ],
+  "subjects_test": 14,
+  "subjects_fixed_zero": 0,
+  "subjects_calib_zero": 0,
+  "auc_range_vs_correct": 0.5955204216073782,
+  "median_ext": 14.583343181133259,
+  "median_ext_correct": 13.199226967612503
+ },
+ {
+  "kind": "curl",
+  "view": "2d",
+  "cohort": "healthy",
+  "subjects": 14,
+  "reps": 311,
+  "labelled_correct": 0.9935691318327974,
+  "test_reps": 255,
+  "test_correct_reps": 254,
+  "usable": 0.9199883064177571,
+  "fixed": 1.0,
+  "fixed_ci": [
+   1.0,
+   1.0
+  ],
+  "fixed_on_correct": 1.0,
+  "fixed_on_correct_ci": [
+   1.0,
+   1.0
+  ],
+  "fixed_angle_only": 1.0,
+  "fixed_angle_only_ci": [
+   1.0,
+   1.0
+  ],
+  "fixed_angle_only_on_correct": 1.0,
+  "fixed_angle_only_on_correct_ci": [
+   1.0,
+   1.0
+  ],
+  "calib": 1.0,
+  "calib_ci": [
+   1.0,
+   1.0
+  ],
+  "calib_on_correct": 1.0,
+  "calib_on_correct_ci": [
+   1.0,
+   1.0
+  ],
+  "subjects_test": 14,
+  "subjects_fixed_zero": 0,
+  "subjects_calib_zero": 0,
+  "auc_range_vs_correct": 0.580906148867314,
+  "median_ext": 11.745315272672139,
+  "median_ext_correct": 11.745315272672139
+ },
+ {
+  "kind": "curl",
+  "view": "3d",
+  "cohort": "patient",
+  "subjects": 14,
+  "reps": 226,
+  "labelled_correct": 0.6106194690265486,
+  "test_reps": 172,
+  "test_correct_reps": 102,
+  "usable": 0.9365655201913469,
+  "fixed": 0.5116279069767442,
+  "fixed_ci": [
+   0.3285602678571429,
+   0.7483418367346937
+  ],
+  "fixed_on_correct": 0.7156862745098039,
+  "fixed_on_correct_ci": [
+   0.5640957446808511,
+   0.8675222629649029
+  ],
+  "fixed_angle_only": 0.5174418604651163,
+  "fixed_angle_only_ci": [
+   0.32591823821722893,
+   0.7553210622990969
+  ],
+  "fixed_angle_only_on_correct": 0.7254901960784313,
+  "fixed_angle_only_on_correct_ci": [
+   0.5655547965998785,
+   0.8823529411764706
+  ],
+  "calib": 0.8488372093023255,
+  "calib_ci": [
+   0.7280502392344498,
+   0.9788805751173709
+  ],
+  "calib_on_correct": 0.9901960784313726,
+  "calib_on_correct_ci": [
+   0.97,
+   1.0
+  ],
+  "subjects_test": 14,
+  "subjects_fixed_zero": 0,
+  "subjects_calib_zero": 0,
+  "auc_range_vs_correct": 0.8404150197628459,
+  "median_ext": 43.14461606882168,
+  "median_ext_correct": 36.56240167361719
+ },
+ {
+  "kind": "curl",
+  "view": "3d",
+  "cohort": "healthy",
+  "subjects": 14,
+  "reps": 311,
+  "labelled_correct": 0.9935691318327974,
+  "test_reps": 255,
+  "test_correct_reps": 254,
+  "usable": 0.9199883064177571,
+  "fixed": 0.9137254901960784,
+  "fixed_ci": [
+   0.784083230958231,
+   0.990058122847302
+  ],
+  "fixed_on_correct": 0.9133858267716536,
+  "fixed_on_correct_ci": [
+   0.7849056603773585,
+   0.9909101192924723
+  ],
+  "fixed_angle_only": 0.9137254901960784,
+  "fixed_angle_only_ci": [
+   0.7833783363910753,
+   0.9883345861337106
+  ],
+  "fixed_angle_only_on_correct": 0.9133858267716536,
+  "fixed_angle_only_on_correct_ci": [
+   0.7851185092780291,
+   0.988765093073956
+  ],
+  "calib": 1.0,
+  "calib_ci": [
+   1.0,
+   1.0
+  ],
+  "calib_on_correct": 1.0,
+  "calib_on_correct_ci": [
+   1.0,
+   1.0
+  ],
+  "subjects_test": 14,
+  "subjects_fixed_zero": 0,
+  "subjects_calib_zero": 0,
+  "auc_range_vs_correct": 0.5533980582524272,
+  "median_ext": 28.713359641148305,
+  "median_ext_correct": 28.713359641148305
+ },
+ {
+  "kind": "raise",
+  "view": "2d",
+  "cohort": "patient",
+  "subjects": 15,
+  "reps": 215,
+  "labelled_correct": 0.6372093023255814,
+  "test_reps": 164,
+  "test_correct_reps": 103,
+  "usable": 0.9677254737646195,
+  "fixed": 0.6524390243902439,
+  "fixed_ci": [
+   0.510196504344312,
+   0.8333633093525179
+  ],
+  "fixed_on_correct": 0.7669902912621359,
+  "fixed_on_correct_ci": [
+   0.5467298888162198,
+   0.9793918567114442
+  ],
+  "fixed_angle_only": 0.7560975609756098,
+  "fixed_angle_only_ci": [
+   0.6,
+   0.9434094515958384
+  ],
+  "fixed_angle_only_on_correct": 0.8252427184466019,
+  "fixed_angle_only_on_correct_ci": [
+   0.5908310201249133,
+   1.0
+  ],
+  "calib": 0.8780487804878049,
+  "calib_ci": [
+   0.7386297568710359,
+   0.990990990990991
+  ],
+  "calib_on_correct": 0.9805825242718447,
+  "calib_on_correct_ci": [
+   0.9545454545454546,
+   1.0
+  ],
+  "subjects_test": 14,
+  "subjects_fixed_zero": 0,
+  "subjects_calib_zero": 0,
+  "auc_range_vs_correct": 0.7042859816582445,
+  "median_ext": 145.37691286746758,
+  "median_ext_correct": 157.39635216898216
+ },
+ {
+  "kind": "raise",
+  "view": "2d",
+  "cohort": "healthy",
+  "subjects": 14,
+  "reps": 317,
+  "labelled_correct": 0.9842271293375394,
+  "test_reps": 261,
+  "test_correct_reps": 256,
+  "usable": 0.97653291033326,
+  "fixed": 0.9961685823754789,
+  "fixed_ci": [
+   0.988,
+   1.0
+  ],
+  "fixed_on_correct": 1.0,
+  "fixed_on_correct_ci": [
+   1.0,
+   1.0
+  ],
+  "fixed_angle_only": 0.9961685823754789,
+  "fixed_angle_only_ci": [
+   0.988,
+   1.0
+  ],
+  "fixed_angle_only_on_correct": 1.0,
+  "fixed_angle_only_on_correct_ci": [
+   1.0,
+   1.0
+  ],
+  "calib": 0.9846743295019157,
+  "calib_ci": [
+   0.9722222222222222,
+   0.9961244051360331
+  ],
+  "calib_on_correct": 1.0,
+  "calib_on_correct_ci": [
+   1.0,
+   1.0
+  ],
+  "subjects_test": 14,
+  "subjects_fixed_zero": 0,
+  "subjects_calib_zero": 0,
+  "auc_range_vs_correct": 1.0,
+  "median_ext": 178.83381450246617,
+  "median_ext_correct": 178.90746441434263
+ },
+ {
+  "kind": "raise",
+  "view": "3d",
+  "cohort": "patient",
+  "subjects": 15,
+  "reps": 215,
+  "labelled_correct": 0.6372093023255814,
+  "test_reps": 164,
+  "test_correct_reps": 103,
+  "usable": 0.9677254737646195,
+  "fixed": 0.6341463414634146,
+  "fixed_ci": [
+   0.48870255457921913,
+   0.8177177565262336
+  ],
+  "fixed_on_correct": 0.7572815533980582,
+  "fixed_on_correct_ci": [
+   0.5338220551378446,
+   0.9736927546138072
+  ],
+  "fixed_angle_only": 0.7317073170731707,
+  "fixed_angle_only_ci": [
+   0.5764176006195281,
+   0.9193548387096774
+  ],
+  "fixed_angle_only_on_correct": 0.8252427184466019,
+  "fixed_angle_only_on_correct_ci": [
+   0.5909090909090909,
+   1.0
+  ],
+  "calib": 0.8902439024390244,
+  "calib_ci": [
+   0.7608133433283358,
+   1.0
+  ],
+  "calib_on_correct": 0.9805825242718447,
+  "calib_on_correct_ci": [
+   0.9534883720930233,
+   1.0
+  ],
+  "subjects_test": 14,
+  "subjects_fixed_zero": 0,
+  "subjects_calib_zero": 0,
+  "auc_range_vs_correct": 0.7410630731798615,
+  "median_ext": 133.775356240504,
+  "median_ext_correct": 140.17056656816706
+ },
+ {
+  "kind": "raise",
+  "view": "3d",
+  "cohort": "healthy",
+  "subjects": 14,
+  "reps": 317,
+  "labelled_correct": 0.9842271293375394,
+  "test_reps": 261,
+  "test_correct_reps": 256,
+  "usable": 0.97653291033326,
+  "fixed": 0.9961685823754789,
+  "fixed_ci": [
+   0.9880466135458168,
+   1.0
+  ],
+  "fixed_on_correct": 1.0,
+  "fixed_on_correct_ci": [
+   1.0,
+   1.0
+  ],
+  "fixed_angle_only": 0.9961685823754789,
+  "fixed_angle_only_ci": [
+   0.9875505705394191,
+   1.0
+  ],
+  "fixed_angle_only_on_correct": 1.0,
+  "fixed_angle_only_on_correct_ci": [
+   1.0,
+   1.0
+  ],
+  "calib": 0.9846743295019157,
+  "calib_ci": [
+   0.9722222222222222,
+   0.9961389961389961
+  ],
+  "calib_on_correct": 1.0,
+  "calib_on_correct_ci": [
+   1.0,
+   1.0
+  ],
+  "subjects_test": 14,
+  "subjects_fixed_zero": 0,
+  "subjects_calib_zero": 0,
+  "auc_range_vs_correct": 0.9993589743589744,
+  "median_ext": 165.69183284016532,
+  "median_ext_correct": 165.74638588507145
+ }
+]
