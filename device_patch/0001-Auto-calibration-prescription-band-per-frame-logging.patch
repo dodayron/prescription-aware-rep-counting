@@ -1,0 +1,1015 @@
+From 4b7d5255a248790835eabbefa969240f5894138f Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 10 Nov 2026 20:11:53 +0000
+Subject: [PATCH] Auto-calibration, prescription band, per-frame logging,
+ tested-resolution flag
+
+- exercise_v2.py: optional calibration (first 2 reps -> thresholds with 25% ROM
+  margin, clamped to the physio band) and prescription band status; default
+  behaviour unchanged
+- exercises_v2.json: squat prescription 60-70 deg flexion, calibration config
+- main_v2.py: --tested/--res/--calibrate/--log/--no-window flags, calibration
+  prompt, band colours on bar and LEDs
+- led_manager.py: band colours, calibration blink
+- frame_logger.py: per-frame CSV for goniometer/lux/latency tests
+- requirements.txt pinned; offline tests
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FyV5VS4Bcuo7wuW8hQNYJ4
+---
+ .gitignore                  |   3 +
+ CALIBRATION_PATCH_NOTES.md  |  34 ++++++
+ exercise_v2.py              | 210 ++++++++++++++++++++++++++++++++++--
+ exercises_v2.json           |  60 ++++++++---
+ frame_logger.py             |  69 ++++++++++++
+ led_manager.py              |  26 ++++-
+ main_v2.py                  | 108 +++++++++++++++++--
+ requirements.txt            |  11 ++
+ sound_manager.py            |   8 ++
+ test_calibration_offline.py | 148 +++++++++++++++++++++++++
+ 10 files changed, 637 insertions(+), 40 deletions(-)
+ create mode 100644 .gitignore
+ create mode 100644 CALIBRATION_PATCH_NOTES.md
+ create mode 100644 frame_logger.py
+ create mode 100644 requirements.txt
+ create mode 100644 test_calibration_offline.py
+
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..5ea1db1
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,3 @@
++__pycache__/
++*.pyc
++logs/
+diff --git a/CALIBRATION_PATCH_NOTES.md b/CALIBRATION_PATCH_NOTES.md
+new file mode 100644
+index 0000000..d586415
+--- /dev/null
++++ b/CALIBRATION_PATCH_NOTES.md
+@@ -0,0 +1,34 @@
++# Branch `feature/calibration-isvr2027` — what changed and how to test it
++
++Default behaviour is unchanged: `python main_v2.py` with no flags, and the unmodified curl / lateral-raise
++entries in `exercises_v2.json`, run exactly as before (1000x780, fixed thresholds, old LED colours, no log).
++
++## New
++| File | Change |
++|---|---|
++| `exercise_v2.py` | Optional `prescription` and `calibration` config keys. `mode` = `calibrating` → `counting`. Calibration: buffer the per-frame angle, median-filter (5), find squat minima (prominence 15°, min spacing 15 frames, pure numpy), take the first `cycles` (2) minima, depth = their mean, stand = 90th percentile of the buffer up to the 2nd minimum; once the user is back up, `peak = depth + margin·ROM`, `rest = stand − margin·ROM` (margin 0.25). Depth is clamped into the physio band before the margin is applied (`clamp_to_prescription`), so a user cannot calibrate to a non-prescribed depth. If no two cycles appear within `max_frames` (900) it falls back to the fixed thresholds. `band_status(angle)` → `above` / `inside` / `deeper`. Also exposes `last_side_angles` and `last_mean_visibility` for the logger. Rep-counting state machine, `max` over sides and the 0.6 visibility gate are untouched. |
++| `exercises_v2.json` | Squat gains `"prescription": {"min_flexion": 60, "max_flexion": 70}` (joint angle 110–120°, matching the KIMORE prescription; the physio sets this per exercise in clinical use) and `"calibration": {"enabled": false, ...}`. Enable per exercise here, or for all with `--calibrate`. |
++| `main_v2.py` | Flags: `--tested` (640x480, the thesis test configuration), `--res WxH`, `--calibrate`, `--log PATH`, `--no-window`. Calibration prompt (TTS file if present + on-screen text + dim white bar strip), then a beep and a console line with the learned thresholds. Progress bar: green inside the band, amber deeper; white ticks mark the band on the bar. Bar x-position now follows the resolution. |
++| `led_manager.py` | `update_bar(per, band_status=None)`: blue → green inside band → amber deeper; unchanged when `band_status` is None. `calibration_blink(on)`. |
++| `sound_manager.py` | Loads `calibration instructions p10.wav` if it exists ("Perform two squats at your prescribed depth"). Generate it with the same TTS voice as the other prompts. |
++| `frame_logger.py` | Per-frame CSV: timestamp, exercise, mode, angle, left/right knee angle, state, reps, mean visibility, band status, thresholds, fps. For the goniometer, lux and latency tests. |
++| `requirements.txt` | Pinned (`mediapipe==0.10.14`). |
++| `test_calibration_offline.py` | Runs without camera/LEDs. `python test_calibration_offline.py [KIMORE JointPosition.csv ...]`. |
++
++## Test on the Pi
++```
++python main_v2.py                                   # must behave exactly as before
++python main_v2.py --tested --log logs/t1.csv        # 640x480 + CSV
++python main_v2.py --tested --calibrate --log logs/c1.csv
++```
++With `--calibrate`: do two squats at your prescribed depth, wait for the beep, then count. Check the console
++line (depth / stand / thresholds, "clamped" if the band pulled it). Then try: shallow squats that the fixed
++90° peak would miss (should now count); squats deeper than the band (should count, bar/LEDs amber).
++
++## Known differences from the offline evaluation
++The on-device detector runs on the buffer available at the moment the user returns to standing after the
++2nd rep; the offline script (`calib_eval.py`) runs `scipy.find_peaks` on the whole recording. On three KIMORE
++recordings two gave identical thresholds and one (a stroke patient) differed by ~10° in learned depth. Treat the offline
++numbers as the evaluation; on-device agreement is to be measured in P4.
++
++Then tag: `git tag v2.1-isvr2027 && git push --tags`.
+diff --git a/exercise_v2.py b/exercise_v2.py
+index 8997108..f14fa07 100644
+--- a/exercise_v2.py
++++ b/exercise_v2.py
+@@ -4,6 +4,50 @@ import mediapipe as mp
+ mp_pose = mp.solutions.pose
+ vis_thresh = 0.6 # threshold for landmark detection
+ 
++
++# ---------------------------------------------------------------------------
++# Auto-calibration helpers (pure numpy so nothing new is needed on the Pi)
++# ---------------------------------------------------------------------------
++def _median_filter(x, k=5):
++    """Odd-window running median with edge padding (same output length as x)."""
++    x = np.asarray(x, dtype=float)
++    if len(x) < k:
++        return x.copy()
++    h = k // 2
++    xp = np.pad(x, (h, h), mode="edge")
++    return np.array([np.median(xp[i:i + k]) for i in range(len(x))])
++
++
++def _find_minima(x, prominence=15.0, distance=15):
++    """Indices of local minima of x whose prominence (rise on BOTH sides) is >= `prominence`
++    and that are at least `distance` samples apart. Same idea as scipy.signal.find_peaks(-x)."""
++    x = np.asarray(x, dtype=float)
++    n = len(x)
++    cand = [i for i in range(1, n - 1) if x[i] <= x[i - 1] and x[i] < x[i + 1]]
++    keep = []
++    for i in cand:
++        # prominence = min rise to the highest point on either side before a lower minimum
++        lo_left = x[i]
++        j = i - 1
++        lmax = x[i]
++        while j >= 0 and x[j] >= lo_left:
++            lmax = max(lmax, x[j]); j -= 1
++        j = i + 1
++        rmax = x[i]
++        while j < n and x[j] >= lo_left:
++            rmax = max(rmax, x[j]); j += 1
++        prom = min(lmax, rmax) - x[i]
++        if prom >= prominence:
++            keep.append((i, prom))
++    # enforce minimum distance, keeping the more prominent minimum
++    keep.sort(key=lambda t: -t[1])
++    chosen = []
++    for i, p in keep:
++        if all(abs(i - c) >= distance for c in chosen):
++            chosen.append(i)
++    return sorted(chosen)
++
++
+ class Exercise:
+     def __init__(self, config):
+         self.name = config["name"]
+@@ -14,10 +58,44 @@ class Exercise:
+         # peak_thresh = Angle at limb end point (e.g., Deep squat)
+         self.rest_thresh = config["thresholds"]["rest"]
+         self.peak_thresh = config["thresholds"]["peak"]
+-        
++        # keep the configured (fixed) thresholds so calibration can be reset
++        self.default_rest = self.rest_thresh
++        self.default_peak = self.peak_thresh
++
+         self.stage = "rest" # States: 'rest', 'peak'
+         self.reps = 0
+ 
++        # --- NEW (optional keys; absent => old behaviour) -----------------
++        # Prescribed range in joint-FLEXION degrees (0 = straight), set by the physio.
++        # Joint angle used by the state machine = 180 - flexion.
++        self.prescription = config.get("prescription")  # e.g. {"min_flexion": 60, "max_flexion": 70}
++        cal = config.get("calibration", False)
++        if isinstance(cal, dict):
++            self.calibration_enabled = bool(cal.get("enabled", True))
++            self.calib_margin = float(cal.get("margin", 0.25))
++            self.calib_cycles = int(cal.get("cycles", 2))
++            self.calib_prominence = float(cal.get("prominence", 15.0))
++            self.calib_distance = int(cal.get("distance", 15))
++            self.calib_clamp = bool(cal.get("clamp_to_prescription", True))
++            self.calib_max_frames = int(cal.get("max_frames", 900))
++        else:
++            self.calibration_enabled = bool(cal)
++            self.calib_margin = 0.25
++            self.calib_cycles = 2
++            self.calib_prominence = 15.0
++            self.calib_distance = 15
++            self.calib_clamp = True
++            self.calib_max_frames = 900  # ~45 s at 20 fps; give up and keep fixed thresholds
++        self.mode = "calibrating" if self.calibration_enabled else "counting"
++        self._calib_buf = []          # per-frame angles during calibration (None kept as nan)
++        self.calib_depth = None       # learned deepest angle (mean of the calibration minima)
++        self.calib_stand = None       # learned standing angle
++        self.calib_clamped = False    # True if the learned depth was pulled into the prescription
++        # per-side angles from the last get_angle() call, for logging
++        self.last_side_angles = {}
++        self.last_mean_visibility = None
++
++    # ------------------------------------------------------------------
+     def _get_point(self, landmarks, side, joint):
+         landmark_name = f"{side.upper()}_{joint}"
+         return landmarks[getattr(mp_pose.PoseLandmark, landmark_name).value]
+@@ -30,38 +108,148 @@ class Exercise:
+         radians = np.arctan2(c[1]-b[1], c[0]-b[0]) - \
+                   np.arctan2(a[1]-b[1], a[0]-b[0])
+         angle = abs(radians * 180.0 / np.pi)
+-        
++
+         if angle > 180.0:
+             angle = 360 - angle
+-            
++
+         return angle
+ 
+     def get_angle(self, landmarks):
+         angles = []
++        self.last_side_angles = {}
++        vis_all = []
+         for side in self.sides:
+             try:
+                 p1 = self._get_point(landmarks, side, self.angle_points[0])
+                 p2 = self._get_point(landmarks, side, self.angle_points[1])
+                 p3 = self._get_point(landmarks, side, self.angle_points[2])
++                vis_all += [p1.visibility, p2.visibility, p3.visibility]
+ 
+                 # calc if landmarks pass threshold
+                 if min (p1.visibility, p2.visibility, p3.visibility) < vis_thresh:
+                         continue
+ 
+-                angles.append(self._calculate_angle(p1, p2, p3))
++                a = self._calculate_angle(p1, p2, p3)
++                self.last_side_angles[side] = a
++                angles.append(a)
+             except (AttributeError, IndexError):
+                 pass # Landmark not visible
+-        
++        self.last_mean_visibility = float(np.mean(vis_all)) if vis_all else None
++
+         if not angles:
+             return None
+         return max(angles)
+ 
++    # ------------------------------------------------------------------
++    # Prescription band
++    # ------------------------------------------------------------------
++    def prescription_angles(self):
++        """(deep_limit, shallow_limit) as joint angles, or None if no prescription."""
++        if not self.prescription:
++            return None
++        return (180.0 - float(self.prescription["max_flexion"]),
++                180.0 - float(self.prescription["min_flexion"]))
++
++    def band_status(self, angle):
++        """'inside' if the current angle is within the prescribed band, 'deeper' if beyond it,
++        'above' if not yet at the band, None if no prescription. For 'decrease' exercises only;
++        for 'increase' exercises the band is interpreted on the raw angle."""
++        pa = self.prescription_angles()
++        if pa is None or angle is None:
++            return None
++        deep, shallow = pa
++        if self.direction == "decrease":
++            if angle < deep:
++                return "deeper"
++            if angle <= shallow:
++                return "inside"
++            return "above"
++        else:
++            lo, hi = float(self.prescription["min_flexion"]), float(self.prescription["max_flexion"])
++            if angle > hi:
++                return "deeper"
++            if angle >= lo:
++                return "inside"
++            return "above"
++
++    # ------------------------------------------------------------------
++    # Auto-calibration: learn this user's rest and peak angles from the first
++    # `calib_cycles` repetitions, then set thresholds with a ROM margin.
++    # ------------------------------------------------------------------
++    def reset_calibration(self):
++        self.rest_thresh, self.peak_thresh = self.default_rest, self.default_peak
++        self.mode = "calibrating" if self.calibration_enabled else "counting"
++        self._calib_buf = []
++        self.calib_depth = self.calib_stand = None
++        self.calib_clamped = False
++
++    def _calibration_step(self, angle):
++        """Returns True when calibration has just completed."""
++        self._calib_buf.append(np.nan if angle is None else float(angle))
++        if len(self._calib_buf) > self.calib_max_frames:
++            # could not find enough cycles: fall back to the fixed thresholds
++            self.mode = "counting"
++            return False
++        buf = np.array(self._calib_buf, dtype=float)
++        good = ~np.isnan(buf)
++        if good.sum() < 2 * self.calib_distance:
++            return False
++        idx = np.arange(len(buf))
++        buf = np.interp(idx, idx[good], buf[good])     # fill dropped frames
++        f = _median_filter(buf, 5)
++        sig = f if self.direction == "decrease" else -f  # minima of sig = exercise peaks
++        mins = _find_minima(sig, self.calib_prominence, self.calib_distance)
++        if len(mins) < self.calib_cycles:
++            return False
++        # wait until the user has come back up after the last calibration rep:
++        # the latest value must be within the margin of the standing level
++        stand_sig = np.percentile(sig[: mins[self.calib_cycles - 1] + 1], 90)
++        depth_sig = float(np.mean(sig[mins[: self.calib_cycles]]))
++        rom = stand_sig - depth_sig
++        if rom <= 0 or sig[-1] < stand_sig - self.calib_margin * rom:
++            return False
++        if self.direction == "decrease":
++            depth, stand = depth_sig, stand_sig
++        else:
++            depth, stand = -depth_sig, -stand_sig
++        self._apply_calibration(depth, stand)
++        return True
++
++    def _apply_calibration(self, depth, stand):
++        self.calib_depth, self.calib_stand = depth, stand
++        # Clamp the learned depth into the physio's band so the user cannot
++        # calibrate to a non-prescribed depth.
++        pa = self.prescription_angles()
++        if self.calib_clamp and pa is not None:
++            if self.direction == "decrease":
++                deep, shallow = pa
++                clamped = min(max(depth, deep), shallow)
++            else:
++                lo, hi = float(self.prescription["min_flexion"]), float(self.prescription["max_flexion"])
++                clamped = min(max(depth, lo), hi)
++            self.calib_clamped = clamped != depth
++            depth = clamped
++        rom = abs(stand - depth)
++        if self.direction == "decrease":
++            self.peak_thresh = depth + self.calib_margin * rom
++            self.rest_thresh = stand - self.calib_margin * rom
++        else:
++            self.peak_thresh = depth - self.calib_margin * rom
++            self.rest_thresh = stand + self.calib_margin * rom
++        self.mode = "counting"
++        self.stage = "rest"
++
++    # ------------------------------------------------------------------
+     def update(self, landmarks):
+         angle = self.get_angle(landmarks)
+ 
++        if self.mode == "calibrating":
++            self._calibration_step(angle)
++            return angle   # no reps are counted while calibrating
++
+         if angle is None:
+             return None
+-            
++
+         #curl validation - check if wrist is above elbow at peak / skip other exercises
+         if "curl" in self.name.lower():
+                 try:
+@@ -73,7 +261,7 @@ class Exercise:
+                         wrist_raised = False # assume false if cant detect wrist
+         else:
+             wrist_raised = True # set true if its a non curl exercise so later ifs pass
+-            
++
+         #lat raise validation - check wrist is above elbows when performing exercise
+         if "lateral raise" in self.name.lower():
+                 try:
+@@ -101,14 +289,14 @@ class Exercise:
+             if angle < self.rest_thresh and self.stage == "peak":
+                 self.stage = "rest"
+                 self.reps += 1
+-        
+-        #0. direction is decrease        
+-        else:        
++
++        #0. direction is decrease
++        else:
+             # 1. Check if we reached Peak
+             if angle < self.peak_thresh:
+                 if wrist_raised and arm_raised: #check for curls/lat raise, wont affect other exercises
+                     self.stage = "peak"
+-            
++
+             # 2. Check if we returned to Rest AND were at peak before
+             if angle > self.rest_thresh and self.stage == "peak":
+                 self.stage = "rest"
+diff --git a/exercises_v2.json b/exercises_v2.json
+index 01d6d81..25fb68b 100644
+--- a/exercises_v2.json
++++ b/exercises_v2.json
+@@ -1,45 +1,77 @@
+ {
+   "squat": {
+     "name": "Squat",
+-    "angle_points": ["HIP", "KNEE", "ANKLE"],
+-    "sides": ["left", "right"],
++    "angle_points": [
++      "HIP",
++      "KNEE",
++      "ANKLE"
++    ],
++    "sides": [
++      "left",
++      "right"
++    ],
+     "direction": "decrease",
+     "thresholds": {
+-    "rest": 160,
+-    "peak": 90
++      "rest": 160,
++      "peak": 90
++    },
++    "prescription": {
++      "min_flexion": 60,
++      "max_flexion": 70
++    },
++    "calibration": {
++      "enabled": false,
++      "margin": 0.25,
++      "cycles": 2,
++      "clamp_to_prescription": true
+     }
+   },
+-
+   "curl_right": {
+     "name": "Right Arm Curl",
+-    "angle_points": ["SHOULDER", "ELBOW", "WRIST"],
+-    "sides": ["right"],
++    "angle_points": [
++      "SHOULDER",
++      "ELBOW",
++      "WRIST"
++    ],
++    "sides": [
++      "right"
++    ],
+     "direction": "decrease",
+     "thresholds": {
+       "rest": 160,
+       "peak": 45
+     }
+   },
+-  
+   "curl_left": {
+     "name": "Left Arm Curl",
+-    "angle_points": ["SHOULDER", "ELBOW", "WRIST"],
+-    "sides": ["left"],
++    "angle_points": [
++      "SHOULDER",
++      "ELBOW",
++      "WRIST"
++    ],
++    "sides": [
++      "left"
++    ],
+     "direction": "decrease",
+     "thresholds": {
+       "rest": 160,
+       "peak": 45
+     }
+   },
+-  
+   "lat_raise_right": {
+     "name": "R Lateral Raise",
+-    "angle_points": ["HIP", "SHOULDER", "ELBOW"],
+-    "sides": ["right"],
++    "angle_points": [
++      "HIP",
++      "SHOULDER",
++      "ELBOW"
++    ],
++    "sides": [
++      "right"
++    ],
+     "direction": "increase",
+     "thresholds": {
+       "rest": 20,
+       "peak": 90
+     }
+   }
+-}
++}
+\ No newline at end of file
+diff --git a/frame_logger.py b/frame_logger.py
+new file mode 100644
+index 0000000..07eb478
+--- /dev/null
++++ b/frame_logger.py
+@@ -0,0 +1,69 @@
++"""Per-frame CSV logger for bench tests (goniometer, lux sweep, latency).
++
++Usage:
++    logger = FrameLogger("logs/session.csv")      # None -> logging disabled
++    logger.log(exercise, angle, fps)               # once per processed frame
++    logger.close()
++
++Columns: timestamp (ISO, ms), t_rel_s, frame, exercise, mode, angle, angle_left, angle_right,
++         state, reps, mean_visibility, band_status, rest_thresh, peak_thresh, fps
++"""
++import csv
++import os
++import time
++from datetime import datetime
++
++
++class FrameLogger:
++    FIELDS = ["timestamp", "t_rel_s", "frame", "exercise", "mode", "angle", "angle_left", "angle_right",
++              "state", "reps", "mean_visibility", "band_status", "rest_thresh", "peak_thresh", "fps"]
++
++    def __init__(self, path=None):
++        self.path = path
++        self._f = None
++        self._w = None
++        self._n = 0
++        self._t0 = time.time()
++        if path:
++            d = os.path.dirname(path)
++            if d:
++                os.makedirs(d, exist_ok=True)
++            self._f = open(path, "w", newline="")
++            self._w = csv.DictWriter(self._f, fieldnames=self.FIELDS)
++            self._w.writeheader()
++
++    @property
++    def enabled(self):
++        return self._w is not None
++
++    def log(self, ex, angle, fps=None):
++        if not self._w:
++            return
++        self._n += 1
++        now = time.time()
++        sa = getattr(ex, "last_side_angles", {}) or {}
++        row = dict(
++            timestamp=datetime.now().isoformat(timespec="milliseconds"),
++            t_rel_s=f"{now - self._t0:.3f}",
++            frame=self._n,
++            exercise=ex.name,
++            mode=getattr(ex, "mode", "counting"),
++            angle="" if angle is None else f"{angle:.2f}",
++            angle_left="" if "left" not in sa else f"{sa['left']:.2f}",
++            angle_right="" if "right" not in sa else f"{sa['right']:.2f}",
++            state=ex.stage,
++            reps=ex.reps,
++            mean_visibility="" if getattr(ex, "last_mean_visibility", None) is None else f"{ex.last_mean_visibility:.3f}",
++            band_status=ex.band_status(angle) if hasattr(ex, "band_status") else "",
++            rest_thresh=f"{ex.rest_thresh:.1f}",
++            peak_thresh=f"{ex.peak_thresh:.1f}",
++            fps="" if fps is None else f"{fps:.1f}",
++        )
++        self._w.writerow(row)
++        if self._n % 50 == 0:
++            self._f.flush()
++
++    def close(self):
++        if self._f:
++            self._f.close()
++            self._f = self._w = None
+diff --git a/led_manager.py b/led_manager.py
+index 49ea5d7..e4d9528 100644
+--- a/led_manager.py
++++ b/led_manager.py
+@@ -19,16 +19,28 @@ class LEDManager:
+         self.last_bar_count = -1   # avoids redundant bar rewrites
+         self.last_rep_count = -1   # avoids redundant rep rewrites
+ 
++    # colours for the prescription band (GRB order is handled by the strip)
++    BAND_COLORS = {
++        None: None,                 # no prescription -> old behaviour
++        "above": (0, 0, 255),       # not yet in the band: blue (as before)
++        "inside": (0, 255, 0),      # inside the prescribed band: green
++        "deeper": (255, 120, 0),    # deeper than prescribed: amber (not a failed rep)
++    }
++
+     # STRIP 1: Progress Bar
+-    def update_bar(self, percentage):
++    def update_bar(self, percentage, band_status=None):
++        """percentage: 0-100 progress rest->peak. band_status: None | 'above' | 'inside' | 'deeper'
++        (from Exercise.band_status). With band_status=None the colours are unchanged from v2."""
+         led2light = int((percentage / 100) * self.num_pixels)
+         led2light = max(0, min(led2light, self.num_pixels))
+ 
+-        if led2light == self.last_bar_count:
++        if (led2light, band_status) == self.last_bar_count:
+             return
+ 
+-        self.last_bar_count = led2light
+-        color = (0, 255, 0) if led2light == self.num_pixels else (0, 0, 255)
++        self.last_bar_count = (led2light, band_status)
++        color = self.BAND_COLORS.get(band_status)
++        if color is None:
++            color = (0, 255, 0) if led2light == self.num_pixels else (0, 0, 255)
+ 
+         for i in range(self.num_pixels):
+             self.bar_pixels[i] = color if i < led2light else (0, 0, 0)
+@@ -51,6 +63,12 @@ class LEDManager:
+                 self.rep_pixels[i] = (0, 255, 0) if i < display_count else (0, 0, 0)
+             self.rep_pixels.show()
+ 
++    def calibration_blink(self, on):
++        """Dim white on the bar strip while the user performs the calibration reps."""
++        self.bar_pixels.fill((40, 40, 40) if on else (0, 0, 0))
++        self.bar_pixels.show()
++        self.last_bar_count = -1
++
+     def _rainbow_complete(self):
+         rainbow_colors = [
+             (255, 0, 0),     # Red
+diff --git a/main_v2.py b/main_v2.py
+index c0be0bf..685c5b1 100644
+--- a/main_v2.py
++++ b/main_v2.py
+@@ -3,6 +3,8 @@ import cv2
+ import mediapipe as mp
+ import numpy as np
+ import time
++import argparse
++import os
+ 
+ from datetime import datetime
+ from database import insert_session
+@@ -12,13 +14,48 @@ import sound_manager
+ # Importing from the v2 loader and LED manager
+ from exercise_loader_v2 import load_exercise
+ from led_manager import LEDManager
++from frame_logger import FrameLogger
++
++# ---------------------------------------------------------------------------
++# Command-line flags. Running with no flags gives the unchanged demo behaviour
++# (1000x780 camera, fixed thresholds, no logging).
++#   --tested     use the 640x480 configuration from the thesis performance tests
++#   --res WxH    any other camera resolution
++#   --calibrate  auto-calibrate thresholds from the user's first two reps
++#                (also enabled per exercise by "calibration": {"enabled": true} in exercises_v2.json)
++#   --log PATH   per-frame CSV log (see frame_logger.py) for goniometer / lux / latency tests
++#   --no-window  headless (no cv2.imshow), e.g. over SSH
++# ---------------------------------------------------------------------------
++_ap = argparse.ArgumentParser()
++_ap.add_argument("--tested", action="store_true", help="640x480, the configuration used for the thesis tests")
++_ap.add_argument("--res", default=None, help="camera resolution WxH (default 1000x780)")
++_ap.add_argument("--calibrate", action="store_true", help="enable auto-calibration for every exercise")
++_ap.add_argument("--log", default=None, help="per-frame CSV log path")
++_ap.add_argument("--no-window", action="store_true", help="do not open the preview window")
++ARGS = _ap.parse_args()
++if ARGS.tested:
++    CAM_SIZE = (640, 480)
++elif ARGS.res:
++    CAM_SIZE = tuple(int(v) for v in ARGS.res.lower().split("x"))
++else:
++    CAM_SIZE = (1000, 780)
++
++
++def start_exercise(key):
++    """Load an exercise, apply the --calibrate flag and reset its state."""
++    ex = load_exercise(key)
++    if ARGS.calibrate:
++        ex.calibration_enabled = True
++        ex.reset_calibration()
++    return ex
+ 
+ # Initialize MediaPipe
+ mp_pose = mp.solutions.pose
+ mp_draw = mp.solutions.drawing_utils
+ 
+ # Load Initial Exercise
+-current_exercise = load_exercise("squat")
++current_exercise = start_exercise("squat")
++calib_announced = False   # has the calibration prompt been played for this exercise
+ 
+ # track previous reps
+ previous_reps = 0;
+@@ -28,7 +65,7 @@ session_start = datetime.now()
+ 
+ # Setup Camera (RPi)
+ picam2 = Picamera2()
+-config = picam2.create_preview_configuration(main={"format": "RGB888", "size": (1000, 780)})
++config = picam2.create_preview_configuration(main={"format": "RGB888", "size": CAM_SIZE})
+ picam2.configure(config)
+ picam2.start()
+ 
+@@ -36,12 +73,18 @@ picam2.start()
+ leds = LEDManager()
+ leds.clear()
+ 
++# per-frame logger (disabled when --log is not given)
++frame_log = FrameLogger(ARGS.log)
++
+ # FPS Calculation variables
+ p_time = 0
+ 
+ ### SET THRESHOLD FOR LANDMARK DISPLAY
+ landmark_vis_thresh = 0.7
+ 
++BAR_X = CAM_SIZE[0] - 120   # keep the bar inside the frame at any resolution
++
++
+ def draw_progress_bar(image, angle, ex_class):
+     # Interpolate angle to bar height (normalized 0 to 1)
+     # Mapping: Rest Angle (0%) -> Peak Angle (100%)
+@@ -57,13 +100,25 @@ def draw_progress_bar(image, angle, ex_class):
+     color = (0, 255, 255) # Yellow 
+     if per == 100:
+         color = (0, 255, 0) # Green if hit depth
++    # Prescription band (if the exercise has one): green inside, amber deeper (BGR)
++    band = ex_class.band_status(angle)
++    if band == "inside":
++        color = (0, 255, 0)
++    elif band == "deeper":
++        color = (0, 170, 255)
+     
+     # Draw Bar background
+-    cv2.rectangle(image, (880, 100), (920, 400), (0, 255, 0), 1)
++    cv2.rectangle(image, (BAR_X, 100), (BAR_X + 40, 400), (0, 255, 0), 1)
+     # Draw Bar Fill
+-    cv2.rectangle(image, (880, int(bar)), (920, 400), color, cv2.FILLED)
++    cv2.rectangle(image, (BAR_X, int(bar)), (BAR_X + 40, 400), color, cv2.FILLED)
+     # Draw Percentage text
+-    cv2.putText(image, f'{int(per)}%', (865, 75), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
++    cv2.putText(image, f'{int(per)}%', (BAR_X - 15, 75), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
++    # Prescribed band marks on the bar
++    pa = ex_class.prescription_angles()
++    if pa is not None and ex_class.direction == "decrease":
++        for a in pa:
++            y = int(np.interp(a, (ex_class.peak_thresh, ex_class.rest_thresh), (100, 400)))
++            cv2.line(image, (BAR_X - 6, y), (BAR_X + 46, y), (255, 255, 255), 1)
+ 
+ with mp_pose.Pose(min_detection_confidence=0.8, min_tracking_confidence=0.5, model_complexity=0) as pose:
+     print("Starting Exercise Tracker V2... Press 'Esc' to quit.")
+@@ -85,6 +140,24 @@ with mp_pose.Pose(min_detection_confidence=0.8, min_tracking_confidence=0.5, mod
+             results = pose.process(frame)
+             frame.flags.writeable = True
+ 
++            # Calibration prompt (once per exercise, only when calibration is on)
++            if current_exercise.mode == "calibrating" and not calib_announced:
++                calib_announced = True
++                leds.calibration_blink(True)
++                if sound_manager.calib_instruct is not None:
++                    sound_manager.calib_instruct.play()
++                print(f"Calibrating {current_exercise.name}: perform "
++                      f"{current_exercise.calib_cycles} reps at your prescribed depth")
++            elif current_exercise.mode == "counting" and calib_announced and current_exercise.calib_depth is not None \
++                    and not getattr(current_exercise, "_calib_reported", False):
++                current_exercise._calib_reported = True
++                leds.calibration_blink(False)
++                sound_manager.rep_beep.play()
++                print(f"Calibrated: depth {current_exercise.calib_depth:.1f} deg, stand {current_exercise.calib_stand:.1f} deg, "
++                      f"thresholds rest {current_exercise.rest_thresh:.1f} / peak {current_exercise.peak_thresh:.1f}"
++                      + (" (clamped to prescription)" if current_exercise.calib_clamped else ""))
++
++            angle = None
+             # Draw Landmarks
+             if results.pose_landmarks:
+                 
+@@ -115,6 +188,9 @@ with mp_pose.Pose(min_detection_confidence=0.8, min_tracking_confidence=0.5, mod
+                            cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 3)
+                 cv2.putText(frame, f"Stage: {current_exercise.stage}", (10, 130), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
++                if current_exercise.mode == "calibrating":
++                    cv2.putText(frame, "CALIBRATING: do 2 reps at prescribed depth", (10, 200),
++                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 255), 2)
+                 
+                 cv2.putText(frame, f"FPS: {int(fps)}", (550, 30), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,0, 255), 2)
+@@ -138,7 +214,8 @@ with mp_pose.Pose(min_detection_confidence=0.8, min_tracking_confidence=0.5, mod
+                         per = np.interp(angle, (current_exercise.rest_thresh, current_exercise.peak_thresh), (0,100))
+ 
+                     
+-                    leds.update_bar(per)
++                    if current_exercise.mode == "counting":
++                        leds.update_bar(per, current_exercise.band_status(angle))
+                     leds.update_reps(current_exercise.reps)
+                 if current_exercise.reps > previous_reps:
+                     # Check if it's the 8th nultiple rep
+@@ -167,6 +244,9 @@ with mp_pose.Pose(min_detection_confidence=0.8, min_tracking_confidence=0.5, mod
+                         (10, 260), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+                 '''
+                     
++            # per-frame log (no-op unless --log was given)
++            frame_log.log(current_exercise, angle, fps)
++
+             ######## Key Controls #######
+             key = cv2.waitKey(1) & 0xFF
+             
+@@ -189,7 +269,8 @@ with mp_pose.Pose(min_detection_confidence=0.8, min_tracking_confidence=0.5, mod
+                 )
+                 
+                 sound_manager.squat_instruct.play()                
+-                current_exercise = load_exercise("squat")
++                current_exercise = start_exercise("squat")
++                calib_announced = False
+                 current_exercise.reps = 0 
+             
+             # RIGHT CURL
+@@ -209,7 +290,8 @@ with mp_pose.Pose(min_detection_confidence=0.8, min_tracking_confidence=0.5, mod
+ 
+                 # START new session
+                 sound_manager.rCurl_instruct.play()
+-                current_exercise = load_exercise("curl_right")
++                current_exercise = start_exercise("curl_right")
++                calib_announced = False
+                 session_start = datetime.now()
+             
+             # LEFT CURL
+@@ -228,7 +310,8 @@ with mp_pose.Pose(min_detection_confidence=0.8, min_tracking_confidence=0.5, mod
+                 )
+                 
+                 sound_manager.lCurl_instruct.play()
+-                current_exercise = load_exercise("curl_left")
++                current_exercise = start_exercise("curl_left")
++                calib_announced = False
+                 current_exercise.reps = 0
+                 
+             #LATERAL RAISE
+@@ -247,7 +330,8 @@ with mp_pose.Pose(min_detection_confidence=0.8, min_tracking_confidence=0.5, mod
+                 )
+                 
+                 sound_manager.rLat_instruct.play()
+-                current_exercise = load_exercise("lat_raise_right")
++                current_exercise = start_exercise("lat_raise_right")
++                calib_announced = False
+                 current_exercise.reps = 0
+                 
+             #end all
+@@ -266,7 +350,8 @@ with mp_pose.Pose(min_detection_confidence=0.8, min_tracking_confidence=0.5, mod
+                 break
+             
+             # Show Feed
+-            cv2.imshow("RPi Fitness Tracker V2", frame)
++            if not ARGS.no_window:
++                cv2.imshow("RPi Fitness Tracker V2", frame)
+             #set full screen or not
+      #       cv2.setWindowProperty("RPi Fitness Tracker V2", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+ 
+@@ -276,5 +361,6 @@ with mp_pose.Pose(min_detection_confidence=0.8, min_tracking_confidence=0.5, mod
+             sound_manager.sound_quit() #turn off audio manager
+             break
+ 
++frame_log.close()
+ cv2.destroyAllWindows()
+ picam2.stop()
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000..f3639d6
+--- /dev/null
++++ b/requirements.txt
+@@ -0,0 +1,11 @@
++# Pinned for the ISVR 2027 evaluation. mediapipe 0.10.14 is the last series that still ships
++# mp.solutions.pose (0.10.32 removed the legacy solutions API). Python 3.11 on Raspberry Pi OS.
++mediapipe==0.10.14
++opencv-python==4.10.0.84
++numpy<2
++pygame==2.6.1
++flask==3.0.3
++# Raspberry Pi only (install from apt / piwheels as appropriate):
++# picamera2
++# adafruit-circuitpython-neopixel
++# adafruit-blinka
+diff --git a/sound_manager.py b/sound_manager.py
+index d3d2f5f..0092238 100644
+--- a/sound_manager.py
++++ b/sound_manager.py
+@@ -23,6 +23,14 @@ lCurl_instruct.set_volume(1.0)  # max pygame volume
+ rLat_instruct = pygame.mixer.Sound("Right Lateral Raise instructions p10.wav")
+ rLat_instruct.set_volume(1.0)  # max pygame volume
+ 
++# Calibration prompt ("perform two squats at your prescribed depth"). Optional: generate it with
++# the same TTS voice as the other prompts and save it under this name; None if the file is absent.
++import os
++calib_instruct = None
++if os.path.exists("calibration instructions p10.wav"):
++    calib_instruct = pygame.mixer.Sound("calibration instructions p10.wav")
++    calib_instruct.set_volume(1.0)
++
+ def sound_quit():
+     #Safely shuts down the audio engine
+     pygame.mixer.quit()
+diff --git a/test_calibration_offline.py b/test_calibration_offline.py
+new file mode 100644
+index 0000000..bf1b298
+--- /dev/null
++++ b/test_calibration_offline.py
+@@ -0,0 +1,148 @@
++"""Offline tests for the auto-calibration and prescription-band code in exercise_v2.py.
++
++Runs without a camera or LEDs. Needs mediapipe installed (exercise_v2 imports it for the landmark enum).
++    python test_calibration_offline.py                       # synthetic squats
++    python test_calibration_offline.py <JointPosition.csv>   # also a KIMORE Kinect recording, side projection
++"""
++import json
++import sys
++from types import SimpleNamespace
++
++import numpy as np
++
++from exercise_v2 import Exercise, mp_pose
++
++N_LM = len(mp_pose.PoseLandmark)
++
++
++def landmarks_from_knee_angles(left_deg, right_deg, vis=1.0):
++    """Build a 33-landmark list where each leg's hip-knee-ankle angle equals the requested value.
++    Hip at (0.5, 0.3), knee at (0.5, 0.5), ankle rotated by (180 - angle) from straight."""
++    lm = [SimpleNamespace(x=0.0, y=0.0, z=0.0, visibility=0.0) for _ in range(N_LM)]
++
++    def put(name, x, y, v=vis):
++        lm[getattr(mp_pose.PoseLandmark, name).value] = SimpleNamespace(x=x, y=y, z=0.0, visibility=v)
++
++    for side, ang in (("LEFT", left_deg), ("RIGHT", right_deg)):
++        hip, knee = (0.5, 0.3), (0.5, 0.5)
++        th = np.radians(180.0 - ang)       # 0 = straight down
++        ankle = (knee[0] + 0.2 * np.sin(th), knee[1] + 0.2 * np.cos(th))
++        put(f"{side}_HIP", *hip)
++        put(f"{side}_KNEE", *knee)
++        put(f"{side}_ANKLE", *ankle)
++    return lm
++
++
++def squat_series(depths, stand=175.0, half_period=20, hold=10):
++    """Angle series: stand -> each depth -> stand, cosine profile."""
++    out = [stand] * hold
++    for d in depths:
++        t = np.linspace(0, np.pi, half_period)
++        out += list(stand - (stand - d) * (1 - np.cos(t)) / 2)
++        out += list(d + (stand - d) * (1 - np.cos(t)) / 2)
++        out += [stand] * hold
++    return np.array(out)
++
++
++def run(ex, series):
++    for a in series:
++        ex.update(landmarks_from_knee_angles(a, a))
++    return ex
++
++
++def squat_cfg(**over):
++    cfg = json.load(open("exercises_v2.json"))["squat"]
++    cfg = json.loads(json.dumps(cfg))
++    cfg.update(over)
++    return cfg
++
++
++def test_default_unchanged():
++    ex = Exercise(squat_cfg(calibration=False))
++    assert ex.mode == "counting" and ex.rest_thresh == 160 and ex.peak_thresh == 90
++    run(ex, squat_series([80, 80, 100, 80]))     # 100 deg is shallower than the fixed 90 deg peak
++    assert ex.reps == 3, ex.reps
++    print("default (fixed 160/90): 4 squats at 80/80/100/80 deg -> reps", ex.reps, "(expected 3)")
++
++
++def test_calibration_counts_user_depth():
++    ex = Exercise(squat_cfg(calibration={"enabled": True, "margin": 0.25, "cycles": 2, "clamp_to_prescription": False}))
++    assert ex.mode == "calibrating"
++    run(ex, squat_series([112, 114, 113, 111, 115, 110]))
++    print(f"calibrated (no clamp): depth {ex.calib_depth:.1f} stand {ex.calib_stand:.1f} "
++          f"-> rest {ex.rest_thresh:.1f} peak {ex.peak_thresh:.1f}; reps {ex.reps} (expected 4)")
++    assert ex.mode == "counting" and ex.reps == 4, (ex.mode, ex.reps)
++    # the fixed rule would have missed all of these 112-115 deg squats
++    ex2 = run(Exercise(squat_cfg(calibration=False)), squat_series([112, 114, 113, 111, 115, 110]))
++    assert ex2.reps == 0
++    print("same series with fixed 160/90 -> reps", ex2.reps)
++
++
++def test_clamp_to_prescription():
++    # user calibrates far shallower than the 60-70 deg flexion band (joint angle 110-120): clamp to 120
++    ex = run(Exercise(squat_cfg(calibration={"enabled": True, "margin": 0.25, "cycles": 2})),
++             squat_series([140, 140, 140, 140, 140]))
++    print(f"clamp: learned depth {ex.calib_depth:.1f}, clamped={ex.calib_clamped}, peak thresh {ex.peak_thresh:.1f}, reps {ex.reps}")
++    assert ex.calib_clamped and ex.peak_thresh < 140 and ex.reps == 0
++    # user calibrates deeper than the band: clamp to 110 but the deep reps still count (deeper = amber, not a fail)
++    ex = run(Exercise(squat_cfg(calibration={"enabled": True, "margin": 0.25, "cycles": 2})),
++             squat_series([85, 85, 85, 85, 85]))
++    print(f"clamp deep: learned {ex.calib_depth:.1f}, clamped={ex.calib_clamped}, peak thresh {ex.peak_thresh:.1f}, reps {ex.reps}")
++    assert ex.calib_clamped and ex.reps == 3
++
++
++def test_band_status():
++    ex = Exercise(squat_cfg())
++    assert ex.band_status(150) == "above" and ex.band_status(115) == "inside" and ex.band_status(100) == "deeper"
++    assert Exercise(squat_cfg(prescription=None)).band_status(100) is None
++    print("band status: 150 above / 115 inside / 100 deeper; no prescription -> None")
++
++
++def test_visibility_gate_and_max():
++    ex = Exercise(squat_cfg(calibration=False))
++    lm = landmarks_from_knee_angles(80, 120)
++    assert abs(ex.get_angle(lm) - 120) < 1e-6        # max over sides, as before
++    lm[mp_pose.PoseLandmark.RIGHT_ANKLE.value].visibility = 0.3
++    assert abs(ex.get_angle(lm) - 80) < 1e-6         # right side gated out
++    print("max-over-sides and 0.6 visibility gate unchanged")
++
++
++def test_calibration_timeout():
++    ex = Exercise(squat_cfg(calibration={"enabled": True, "max_frames": 60}))
++    run(ex, np.full(100, 175.0))
++    assert ex.mode == "counting" and ex.rest_thresh == 160 and ex.peak_thresh == 90
++    print("no reps within max_frames -> falls back to fixed thresholds")
++
++
++def test_kimore(path):
++    import pandas as pd
++    df = pd.read_csv(path, header=None).dropna(axis=1, how="all").to_numpy(float).reshape(-1, 25, 4)
++    pos, st = df[:, :, :3], df[:, :, 3]
++    vis = np.where(st == 2, 1.0, np.where(st == 1, 0.5, 0.0))
++    idx = dict(L=(12, 13, 14), R=(16, 17, 18))
++    results = {}
++    for label, cal in (("fixed 160/90", False), ("auto-calibrated", {"enabled": True, "clamp_to_prescription": False})):
++        ex = Exercise(squat_cfg(calibration=cal))
++        for t in range(len(pos)):
++            lm = [SimpleNamespace(x=0.0, y=0.0, z=0.0, visibility=0.0) for _ in range(N_LM)]
++            for side, (h, k, a) in idx.items():
++                for name, j in (("HIP", h), ("KNEE", k), ("ANKLE", a)):
++                    nm = f"{'LEFT' if side == 'L' else 'RIGHT'}_{name}"
++                    lm[getattr(mp_pose.PoseLandmark, nm).value] = SimpleNamespace(
++                        x=pos[t, j, 2], y=-pos[t, j, 1], z=0.0, visibility=vis[t, j])   # simulated side view (z, -y)
++            ex.update(lm)
++        results[label] = ex
++        extra = "" if ex.calib_depth is None else f" depth {ex.calib_depth:.1f} stand {ex.calib_stand:.1f} thresholds {ex.rest_thresh:.1f}/{ex.peak_thresh:.1f}"
++        print(f"KIMORE {path.split('/')[-3]}: {label}: reps {ex.reps}{extra}")
++
++
++if __name__ == "__main__":
++    test_default_unchanged()
++    test_calibration_counts_user_depth()
++    test_clamp_to_prescription()
++    test_band_status()
++    test_visibility_gate_and_max()
++    test_calibration_timeout()
++    for p in sys.argv[1:]:
++        test_kimore(p)
++    print("all offline tests passed")
+-- 
+2.43.0
+

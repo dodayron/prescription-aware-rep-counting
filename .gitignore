@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+mpenv/
+# raw data and per-frame model output are never committed
+data/
+*.mp4
+*.npy
+bp_out/
+bp_full/
+bp_lite/
+# KIMORE: EULA forbids redistribution; per-subject outputs stay local
+**/*_per_recording.csv
+**/inventory.csv
+**/*.log

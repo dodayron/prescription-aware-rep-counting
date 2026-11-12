@@ -1,0 +1,129 @@
+{
+ "rho_depth_cPO_all": {
+  "n": 56,
+  "rho": -0.10218402316741475,
+  "p": 0.45362020719651625,
+  "lo": -0.4108309373023173,
+  "hi": 0.19959905682247242,
+  "median_depth": 132.86586792534217
+ },
+ "rho_depth_cPO_patient": {
+  "n": 21,
+  "rho": 0.19556864068892846,
+  "p": 0.3955593236492521,
+  "lo": -0.3847857857292558,
+  "hi": 0.6143827625317506,
+  "median_depth": 138.64617068619324
+ },
+ "rho_depth_cPO_healthy": {
+  "n": 35,
+  "rho": -0.15693010288391207,
+  "p": 0.36796612609356416,
+  "lo": -0.5354810283243335,
+  "hi": 0.2553043441225465,
+  "median_depth": 132.6646029887399
+ },
+ "band": [
+  {
+   "cohort": "healthy",
+   "band_class": "deeper",
+   "n": 10,
+   "cPO_median": 14.333333333333332,
+   "cPO_mean": 13.433333333333334
+  },
+  {
+   "cohort": "healthy",
+   "band_class": "inside",
+   "n": 1,
+   "cPO_median": 12.333333333333334,
+   "cPO_mean": 12.333333333333334
+  },
+  {
+   "cohort": "healthy",
+   "band_class": "shallower",
+   "n": 24,
+   "cPO_median": 13.166666666666668,
+   "cPO_mean": 13.513888888888888
+  },
+  {
+   "cohort": "patient",
+   "band_class": "deeper",
+   "n": 8,
+   "cPO_median": 7.666666666666667,
+   "cPO_mean": 7.726083361205806
+  },
+  {
+   "cohort": "patient",
+   "band_class": "shallower",
+   "n": 13,
+   "cPO_median": 11.0,
+   "cPO_mean": 10.435897435897434
+  }
+ ],
+ "nonexpert_vs_patient": {
+  "fixed": {
+   "nonexpert_exact": 0.13636363636363635,
+   "patient_exact": 0.14285714285714285
+  },
+  "presc": {
+   "nonexpert_exact": 0.3181818181818182,
+   "patient_exact": 0.14285714285714285
+  },
+  "calib": {
+   "nonexpert_exact": 0.6818181818181818,
+   "patient_exact": 0.23809523809523808
+  }
+ },
+ "by_subgroup": [
+  {
+   "subgroup": "BackPain",
+   "n": 6,
+   "fixed_zero": 0.5,
+   "presc_zero": 0.3333333333333333,
+   "calib_zero": 0.0,
+   "calib_exact": 0.0,
+   "depth_median": 117.4536100998352,
+   "cPO_median": 10.833333333333332
+  },
+  {
+   "subgroup": "Expert",
+   "n": 13,
+   "fixed_zero": 0.5384615384615384,
+   "presc_zero": 0.46153846153846156,
+   "calib_zero": 0.0,
+   "calib_exact": 0.3076923076923077,
+   "depth_median": 126.26097796482387,
+   "cPO_median": 13.0
+  },
+  {
+   "subgroup": "NotExpert",
+   "n": 22,
+   "fixed_zero": 0.6363636363636364,
+   "presc_zero": 0.36363636363636365,
+   "calib_zero": 0.0,
+   "calib_exact": 0.6818181818181818,
+   "depth_median": 133.690152346812,
+   "cPO_median": 14.0
+  },
+  {
+   "subgroup": "Parkinson",
+   "n": 8,
+   "fixed_zero": 0.75,
+   "presc_zero": 0.5,
+   "calib_zero": 0.0,
+   "calib_exact": 0.625,
+   "depth_median": 123.94776700506621,
+   "cPO_median": 10.5
+  },
+  {
+   "subgroup": "Stroke",
+   "n": 7,
+   "fixed_zero": 1.0,
+   "presc_zero": 0.8571428571428571,
+   "calib_zero": 0.14285714285714285,
+   "calib_exact": 0.0,
+   "depth_median": 155.8571666916623,
+   "cPO_median": 8.666666666666666
+  }
+ ]
+}

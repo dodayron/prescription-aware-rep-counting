@@ -1,0 +1,9 @@
+# Offline evaluation environment (Python 3.11). Device requirements are in CV-Fitness-Tracker-Upgrade.
+mediapipe==0.10.14
+opencv-python-headless
+numpy<2
+pandas
+scipy
+scikit-learn
+matplotlib
+openpyxl
